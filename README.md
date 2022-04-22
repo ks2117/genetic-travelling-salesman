@@ -1,1 +1,1 @@
-# genetuic-travelling-salesman
+# genetic-travelling-salesman
