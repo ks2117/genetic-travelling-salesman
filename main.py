@@ -4,25 +4,39 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def generation_fitness(generation):
-    return np.array([1 / np.sum(path) for path in generation])
+# TODO: simulating annealing
 
 
 class GeneticTrainer:
 
-    def __init__(self, distances=None, population_size=100, number_of_generations=10):
+    def __init__(self, distances=None, population_size=100, number_of_generations=10, mutation_rate=0.1):
         if distances is not None:
             self.distances = distances
             self.number_of_cities = len(distances)
         else:
             self.number_of_cities = 20
-            self.coordinates = [[100.0, 150.0]] + [[random.random() * 275, random.random() * 200] for i in range(20)]
+            self.coordinates = [[100, 150]] + [[int(random.random() * 275), int(random.random() * 200)] for _ in range(20)]
             self.distances = [
-                [int(np.linalg.norm([self.coordinates[i], self.coordinates[j]])) for i in range(self.number_of_cities)]
-                for j in range(self.number_of_cities)]
+                [int(np.linalg.norm([self.coordinates[i], self.coordinates[j]])) for i in range(len(self.coordinates))]
+                for j in range(len(self.coordinates))]
         self.city_names = ["X"] + [chr(65 + i) for i in range(self.number_of_cities)]
         self.population_size = population_size
         self.number_of_generations = number_of_generations
+        self.mutation_rate = mutation_rate
+
+    def evaluate_path(self, path):
+        sum = 0
+        current_city = 0
+        for city in path:
+            sum += self.distances[current_city][int(city)]
+            current_city = int(city)
+        sum += self.distances[current_city][0]
+        return sum
+
+    def generation_fitness(self, generation):
+        evaluation = np.array([self.evaluate_path(path) for path in generation])
+        evaluation = evaluation - np.min(evaluation) + 1
+        return 1 / evaluation
 
     def partially_mapped_crossover(self, path1, path2, number_of_cities=None, distribution="uniform", first_city=None):
         if number_of_cities is None:
@@ -130,31 +144,53 @@ class GeneticTrainer:
 
         return new_path1, new_path2
 
-
-    def roulette_wheel_selection(self, generation):
-        probabilities = generation_fitness(generation)
-        probabilities = probabilities / sum(probabilities)
+    def roulette_wheel_selection(self, generation, probabilities):
         pairings = [np.random.choice([i for i in range(self.population_size)], size=2, replace=False, p=probabilities)
                     for _ in range(self.population_size // 2)]
         return [[generation[p1], generation[p2]] for p1, p2 in pairings]
+
+    def stochastic_universal_sampling(self, generation, number_of_offspring, fitness, p):
+        pass
+
+    def tournament_selection(self, generation):
+        # TODO
+        pass
+
+    def truncation_selection(self, generation):
+        # TODO
+        pass
+
+    def mutate(self, path):
+        length = len(path)
+        mutations = int(random.random() * self.mutation_rate * length)
+        for _ in range(mutations):
+            i1 = random.randint(0, length - 1)
+            i2 = (i1 + random.randint(0, length - 2)) % length
+            path[i1], path[i2] = path[i2], path[i1]
+        return path
 
     def train(self):
         cities = np.array([i + 1 for i in range(self.number_of_cities)])
         generation = [np.random.permutation(cities) for _ in range(self.population_size)]
         generation_counter = 1
         history = np.zeros(self.number_of_generations + 1)
-        history[0] = max(generation_fitness(generation))
+        fitness = self.generation_fitness(generation)
+        best_path = generation[np.argmax(fitness)]
+        history[0] = self.evaluate_path(best_path)
         while True:
             if generation_counter > self.number_of_generations:
                 break
-            pairings = self.roulette_wheel_selection(generation)
+            fitness = self.generation_fitness(generation)
+            probabilities = fitness / sum(fitness)
+            pairings = self.roulette_wheel_selection(generation, probabilities)
             generation = [self.partially_mapped_crossover(path1, path2) for path1, path2 in pairings]
             generation = [item for sublist in generation for item in sublist]
-            fitness = generation_fitness(generation)
-            history[generation_counter] = max(fitness)
+            generation = [self.mutate(population) for population in generation]
+            fitness = self.generation_fitness(generation)
+            best_path = generation[np.argmax(fitness)]
+            history[generation_counter] = self.evaluate_path(best_path)
             generation_counter += 1
-            # TODO MUTATION
-        fitness = generation_fitness(generation)
+        fitness = self.generation_fitness(generation)
         return generation[np.argmax(fitness)], history
 
     def display_cities(self):
@@ -170,18 +206,21 @@ class GeneticTrainer:
         return [chr(int(city) + 64) for city in path]
 
 
-g = GeneticTrainer(number_of_generations=100)
-test_p1 = np.array([ord(c) - 64 for c in "JBFCADHGIE"])
-test_p2 = np.array([ord(c) - 64 for c in "FAGDHCEBJI"])
-pmc1, pmc2 = g.partially_mapped_crossover(test_p1, test_p2, number_of_cities=10, distribution="test", first_city=2)
-print(g.decode_cities(pmc1))
-order_crossover1, order_crossover2 = g.order_crossover(test_p1, test_p2, number_of_cities=10, distribution="test",
-                                                       first_city=1)
-print(g.decode_cities(order_crossover1))
-cycle_crossover1, cycle_crossover2 = g.cycle_crossover(test_p1, test_p2, number_of_cities=10)
-print(g.decode_cities(cycle_crossover1))
-# best_path, history = g.train()
-# print(best_path)
-# plt.plot(history)
-# plt.show()
-# g.display_cities()
+def test():
+    g = GeneticTrainer()
+    test_p1 = np.array([ord(c) - 64 for c in "JBFCADHGIE"])
+    test_p2 = np.array([ord(c) - 64 for c in "FAGDHCEBJI"])
+    pmc1, pmc2 = g.partially_mapped_crossover(test_p1, test_p2, number_of_cities=10, distribution="test", first_city=2)
+    print(g.decode_cities(pmc1))
+    order_crossover1, order_crossover2 = g.order_crossover(test_p1, test_p2, number_of_cities=10, distribution="test",
+                                                           first_city=1)
+    print(g.decode_cities(order_crossover1))
+    cycle_crossover1, cycle_crossover2 = g.cycle_crossover(test_p1, test_p2, number_of_cities=10)
+    print(g.decode_cities(cycle_crossover1))
+
+g = GeneticTrainer(population_size=50, number_of_generations=1000, mutation_rate=0.2)
+best_path, history = g.train()
+print(best_path)
+plt.plot(history)
+plt.show()
+g.display_cities()
