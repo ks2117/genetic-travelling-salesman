@@ -15,7 +15,8 @@ class GeneticTrainer:
             self.number_of_cities = len(distances)
         else:
             self.number_of_cities = 20
-            self.coordinates = [[100, 150]] + [[int(random.random() * 275), int(random.random() * 200)] for _ in range(20)]
+            self.coordinates = [[100, 150]] + [[int(random.random() * 275), int(random.random() * 200)] for _ in
+                                               range(20)]
             self.distances = [
                 [int(np.linalg.norm([self.coordinates[i], self.coordinates[j]])) for i in range(len(self.coordinates))]
                 for j in range(len(self.coordinates))]
@@ -33,10 +34,22 @@ class GeneticTrainer:
         sum += self.distances[current_city][0]
         return sum
 
-    def generation_fitness(self, generation):
+    def generation_fitness(self, generation, p=0, epsilon=1):
+        # p is a hyperparameter, when p is 0 the shortest path will have maximum fitness, when p=1 all elements will
+        # have equal fitness. Low values of p correspond with giving higher fitness to shorter paths.
+        # epsilon is a parameter to add numerical stability for cases where we want to use p==0
         evaluation = np.array([self.evaluate_path(path) for path in generation])
-        evaluation = evaluation - np.min(evaluation) + 1
-        return 1 / evaluation
+        if p == 0:
+            best_fitness = np.min(evaluation)
+            for i in range(len(evaluation)):
+                if evaluation[i] == best_fitness:
+                    evaluation[i] = 1
+                else:
+                    evaluation[i] = 0
+                return evaluation
+        else:
+            evaluation = evaluation - (np.min(evaluation) + epsilon) * (1 - p)
+            return 1 / evaluation
 
     def partially_mapped_crossover(self, path1, path2, number_of_cities=None, distribution="uniform", first_city=None):
         if number_of_cities is None:
@@ -144,13 +157,31 @@ class GeneticTrainer:
 
         return new_path1, new_path2
 
-    def roulette_wheel_selection(self, generation, probabilities):
+    def roulette_wheel_selection(self, generation, weights):
+        probabilities = weights / np.sum(weights)
         pairings = [np.random.choice([i for i in range(self.population_size)], size=2, replace=False, p=probabilities)
                     for _ in range(self.population_size // 2)]
         return [[generation[p1], generation[p2]] for p1, p2 in pairings]
 
     def stochastic_universal_sampling(self, generation, number_of_offspring, fitness, p):
-        pass
+        n = len(fitness)
+        indices = range(n)
+        indices.sort(key=fitness.__getitem__)
+        sorted_fitness, sorted_generation = (np.array(t) for t in zip(*sorted(zip(fitness, generation))))
+        partial_sums = np.array([f for f in sorted_fitness])
+        for i in range(1, n):
+            partial_sums[i] += partial_sums[i-1]
+        start = random.random() * p
+        pointers = np.array([start + i * p for i in range(number_of_offspring-2)])
+        keep = [0 for _ in range(number_of_offspring)]
+        counter = 0
+        for p in pointers:
+            i = 0
+            while partial_sums[i] < p:
+                i += 1
+            keep[counter] = sorted_generation[i]
+            counter += 1
+        return keep
 
     def tournament_selection(self, generation):
         # TODO
@@ -181,8 +212,7 @@ class GeneticTrainer:
             if generation_counter > self.number_of_generations:
                 break
             fitness = self.generation_fitness(generation)
-            probabilities = fitness / sum(fitness)
-            pairings = self.roulette_wheel_selection(generation, probabilities)
+            pairings = self.roulette_wheel_selection(generation, fitness)
             generation = [self.partially_mapped_crossover(path1, path2) for path1, path2 in pairings]
             generation = [item for sublist in generation for item in sublist]
             generation = [self.mutate(population) for population in generation]
@@ -190,8 +220,7 @@ class GeneticTrainer:
             best_path = generation[np.argmax(fitness)]
             history[generation_counter] = self.evaluate_path(best_path)
             generation_counter += 1
-        fitness = self.generation_fitness(generation)
-        return generation[np.argmax(fitness)], history
+        return best_path, history
 
     def display_cities(self):
         x = [self.coordinates[i][0] for i in range(len(self.coordinates))]
@@ -217,6 +246,7 @@ def test():
     print(g.decode_cities(order_crossover1))
     cycle_crossover1, cycle_crossover2 = g.cycle_crossover(test_p1, test_p2, number_of_cities=10)
     print(g.decode_cities(cycle_crossover1))
+
 
 g = GeneticTrainer(population_size=50, number_of_generations=1000, mutation_rate=0.2)
 best_path, history = g.train()
