@@ -4,8 +4,8 @@ import matplotlib
 import numpy as np
 import matplotlib.pyplot as plt
 
-
 # TODO: simulating annealing
+import scipy
 
 
 class GeneticTrainer:
@@ -26,7 +26,8 @@ class GeneticTrainer:
             self.coordinates = [[100, 150]] + [[int(random.random() * 275), int(random.random() * 200)] for _ in
                                                range(self.number_of_cities)]
         self.distances = [
-            [int(np.sqrt((self.coordinates[i][0] - self.coordinates[j][0]) ** 2 + (self.coordinates[i][1] - self.coordinates[j][1]) ** 2)) for i in range(len(self.coordinates))]
+            [int(np.sqrt((self.coordinates[i][0] - self.coordinates[j][0]) ** 2 + (
+                        self.coordinates[i][1] - self.coordinates[j][1]) ** 2)) for i in range(len(self.coordinates))]
             for j in range(len(self.coordinates))]
         self.city_names = ["X"] + [chr(65 + i) for i in range(self.number_of_cities)]
 
@@ -50,26 +51,31 @@ class GeneticTrainer:
         new_path = np.zeros(number_of_cities)
 
         if distribution == "uniform":
-            subsequence_length = random.randint(0, number_of_cities)
+            subsequence_length = random.randint(0, number_of_cities - 2)
         elif distribution == "normal":
-            subsequence_length = 5  # TODO: consider normal distribution for above
+            subsequence_length = int(scipy.stats.truncnorm.rvs(0, 1) * (number_of_cities - 2))
         elif distribution == "test":
             subsequence_length = 5
         else:
             subsequence_length = number_of_cities / 2
 
         if first_city is None:
-            first_city = random.randint(0, number_of_cities - subsequence_length)
+            first_city = random.randint(0, number_of_cities - 1)
 
-        new_path[first_city:first_city + subsequence_length] = path1[first_city:first_city + subsequence_length]
+        if first_city + subsequence_length > number_of_cities:
+            new_path[first_city:] = path1[first_city:]
+            new_path[:(first_city + subsequence_length) % number_of_cities] = \
+                path1[:(first_city + subsequence_length) % number_of_cities]
+        else:
+            new_path[first_city:first_city + subsequence_length] = path1[first_city:first_city + subsequence_length]
 
         counter = 0
 
         for i in range(number_of_cities):
-            if first_city <= i < first_city + subsequence_length:
+            if new_path[i] != 0:
                 continue
             else:
-                while path2[counter] in new_path:
+                while path2[counter % number_of_cities] in new_path:
                     counter += 1
                 new_path[i] = path2[counter]
         return new_path
@@ -80,18 +86,23 @@ class GeneticTrainer:
         new_path = np.zeros(number_of_cities)
 
         if distribution == "uniform":
-            subsequence_length = random.randint(0, number_of_cities)
+            subsequence_length = random.randint(0, number_of_cities - 2)
         elif distribution == "normal":
-            subsequence_length = 5  # TODO: consider normal distribution for above
+            subsequence_length = int(scipy.stats.truncnorm.rvs(0, 1) * (number_of_cities - 2))
         elif distribution == "test":
             subsequence_length = 5
         else:
             subsequence_length = number_of_cities / 2
 
         if first_city is None:
-            first_city = random.randint(0, number_of_cities - subsequence_length)
+            first_city = random.randint(0, number_of_cities - 1)
 
-        new_path[first_city:first_city + subsequence_length] = path1[first_city:first_city + subsequence_length]
+        if first_city + subsequence_length > number_of_cities:
+            new_path[first_city:] = path1[first_city:]
+            new_path[:(first_city + subsequence_length) % number_of_cities] = \
+                path1[:(first_city + subsequence_length) % number_of_cities]
+        else:
+            new_path[first_city:first_city + subsequence_length] = path1[first_city:first_city + subsequence_length]
 
         counter = first_city + subsequence_length
         for i in range(subsequence_length, number_of_cities):
@@ -206,7 +217,7 @@ class GeneticTrainer:
         return path
 
     def train(self, selection_method="rws", crossover_method="pmc"):
-        # ----------- INITALISATION ------------------------------------------------------------------------------------
+        # ----------- INITIALISATION -----------------------------------------------------------------------------------
         cities = np.array([i + 1 for i in range(self.number_of_cities)])
         generation = [np.random.permutation(cities) for _ in range(self.population_size)]
         generation_counter = 1
@@ -228,7 +239,7 @@ class GeneticTrainer:
                 selection = self.stochastic_universal_sampling(generation, fitness, n)
             elif selection_method == "tournament":
                 tournament_size = int(2.5 * self.selection_rate * self.population_size)
-                selection = self.tournament_selection(generation, fitness, n, tournament_size=tournament_size, p=4/9)
+                selection = self.tournament_selection(generation, fitness, n, tournament_size=tournament_size, p=4 / 9)
             elif selection_method == "truncation":
                 selection = self.truncation_selection(generation, fitness, n)
             else:
@@ -256,7 +267,9 @@ class GeneticTrainer:
     def display_cities(self, path=None, ax=None):
         x = [self.coordinates[i][0] for i in range(len(self.coordinates))]
         y = [self.coordinates[i][1] for i in range(len(self.coordinates))]
+        show = False
         if ax is None:
+            show = True
             fig, ax = plt.subplots()
         ax.scatter(x, y)
         for i in range(len(x)):
@@ -266,12 +279,12 @@ class GeneticTrainer:
             path = path.astype(int)
             for city in path:
                 ax.plot([self.coordinates[current_city][0], self.coordinates[int(city)][0]],
-                         [self.coordinates[current_city][1], self.coordinates[int(city)][1]])
+                        [self.coordinates[current_city][1], self.coordinates[int(city)][1]])
                 current_city = city
 
             ax.plot([self.coordinates[current_city][0], self.coordinates[0][0]],
-                     [self.coordinates[current_city][1], self.coordinates[0][1]])
-        if ax is None:
+                    [self.coordinates[current_city][1], self.coordinates[0][1]])
+        if show:
             plt.show()
 
     def decode_cities(self, path):
@@ -290,22 +303,38 @@ def test():
     print(g.decode_cities(cycle_crossover))
 
 
+# noinspection PyTypeChecker
+def evaluate_methods():
+    g = GeneticTrainer(coordinates=coordinates, population_size=100, number_of_generations=1000, mutation_rate=0.15,
+                       selection_rate=1 / 4)
+    crossover_methods = ["pmc", "order", "cycle"]
+    selection_methods = ["rws", "sus", "tournament", "truncation"]
+    history = [[[] for _ in crossover_methods] for _ in selection_methods]
+    for i, c in enumerate(crossover_methods):
+        for j, s in enumerate(selection_methods):
+            history[j][i] = g.train(crossover_method=c, selection_method=s)
+    fig, axs = plt.subplots(len(crossover_methods), len(selection_methods) * 2)
+    for i, c in enumerate(crossover_methods):
+        for j, s in enumerate(selection_methods):
+            axs[i, j * 2].set_title(c + " " + s)
+            axs[i, j * 2 + 1].set_title("d = {}km".format(history[j][i][-1, 1]))
+            axs[i, j * 2].plot(history[j][i][:, 1])
+            axs[i, j * 2].plot(history[j][i][:, 2])
+            g.display_cities(path=history[j][i][-1, 0], ax=axs[i, j * 2 + 1])
+    fig.subplots_adjust(right=12, bottom=0, top=4)
+    fig.savefig("comparison.jpg", dpi=100,
+                bbox_inches=matplotlib.transforms.Bbox([[0, -2.4], [6.4 * 12 + 1, 4.8 * 5 - 2.4]]))
+
+
 test()
 coordinates = [[150, 100], [240, 80], [100, 160], [25, 165], [200, 20], [150, 30], [220, 180], [270, 15], [225, 115],
                [85, 40], [125, 5], [190, 120], [0, 55], [250, 90], [175, 70], [100, 120], [175, 80], [20, 10],
                [150, 160], [230, 25], [125, 75]]
-g = GeneticTrainer(coordinates=coordinates, population_size=100, number_of_generations=1000, mutation_rate=0.15, selection_rate=1/4)
-crossover_methods = ["pmc", "order", "cycle"]
-selection_methods = ["rws", "sus", "tournament", "truncation"]
-history = [[[] for s in crossover_methods] for c in selection_methods]
-for i, c in enumerate(crossover_methods):
-    for j, s in enumerate(selection_methods):
-        history[j][i] = g.train(crossover_method=c, selection_method=s)
-fig, axs = plt.subplots(len(crossover_methods), len(selection_methods) * 2)
-for i, c in enumerate(crossover_methods):
-    for j, s in enumerate(selection_methods):
-        axs[i, j * 2].set_title(c + " " + s)
-        axs[i, j * 2].plot(history[j][i][:, 1])
-        g.display_cities(path=history[j][i][-1, 0], ax=axs[i, j * 2 + 1])
-fig.subplots_adjust(right=12, bottom=0, top=4)
-fig.savefig("comparison.jpg", dpi=100, bbox_inches=matplotlib.transforms.Bbox([[0, -2.4], [6.4*12 + 1, 4.8 * 5 - 2.4]]))
+evaluate_methods()
+
+# g = GeneticTrainer(coordinates=coordinates, population_size=100, number_of_generations=1000, mutation_rate=0.1,
+#                    selection_rate=1 / 4)
+# history = g.train(crossover_method="order", selection_method="rws")
+# plt.plot(history[:, 1])
+# plt.show()
+# g.display_cities(path=history[-1, 0])
