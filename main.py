@@ -1,5 +1,6 @@
 import random
 
+import matplotlib
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -40,111 +41,83 @@ class GeneticTrainer:
 
     def generation_fitness(self, generation, p=0, epsilon=1):
         evaluation = np.array([self.evaluate_path(path) for path in generation])
-        return 1 / (evaluation - min(evaluation) + 1)
+        return 1 / (evaluation - min(evaluation) + 1), evaluation
 
     def partially_mapped_crossover(self, path1, path2, number_of_cities=None, distribution="uniform", first_city=None):
         if number_of_cities is None:
             number_of_cities = self.number_of_cities
         # len(self.distances) - 1 is the number of cities in the array
-        new_path1 = np.zeros(number_of_cities)
-        new_path2 = np.zeros(number_of_cities)
+        new_path = np.zeros(number_of_cities)
 
         if distribution == "uniform":
             subsequence_length = random.randint(0, number_of_cities)
         elif distribution == "normal":
             subsequence_length = 5  # TODO: consider normal distribution for above
         elif distribution == "test":
-            subsequence_length = 5  # TODO: consider normal distribution for above
+            subsequence_length = 5
         else:
             subsequence_length = number_of_cities / 2
 
         if first_city is None:
             first_city = random.randint(0, number_of_cities - subsequence_length)
 
-        new_path1[first_city:first_city + subsequence_length] = path1[first_city:first_city + subsequence_length]
-        new_path2[first_city:first_city + subsequence_length] = path2[first_city:first_city + subsequence_length]
+        new_path[first_city:first_city + subsequence_length] = path1[first_city:first_city + subsequence_length]
 
-        counter1 = 0
-        counter2 = 0
+        counter = 0
 
         for i in range(number_of_cities):
             if first_city <= i < first_city + subsequence_length:
                 continue
             else:
-                while path2[counter1] in new_path1:
-                    counter1 += 1
-                new_path1[i] = path2[counter1]
-
-                while path1[counter2] in new_path2:
-                    counter2 += 1
-                new_path2[i] = path1[counter2]
-        return new_path1, new_path2
+                while path2[counter] in new_path:
+                    counter += 1
+                new_path[i] = path2[counter]
+        return new_path
 
     def order_crossover(self, path1, path2, number_of_cities=None, distribution="uniform", first_city=None):
         if number_of_cities is None:
             number_of_cities = self.number_of_cities
-        new_path1 = np.zeros(number_of_cities)
-        new_path2 = np.zeros(number_of_cities)
+        new_path = np.zeros(number_of_cities)
 
         if distribution == "uniform":
             subsequence_length = random.randint(0, number_of_cities)
         elif distribution == "normal":
             subsequence_length = 5  # TODO: consider normal distribution for above
         elif distribution == "test":
-            subsequence_length = 5  # TODO: consider normal distribution for above
+            subsequence_length = 5
         else:
             subsequence_length = number_of_cities / 2
 
         if first_city is None:
             first_city = random.randint(0, number_of_cities - subsequence_length)
 
-        new_path1[first_city:first_city + subsequence_length] = path1[first_city:first_city + subsequence_length]
-        new_path2[first_city:first_city + subsequence_length] = path2[first_city:first_city + subsequence_length]
+        new_path[first_city:first_city + subsequence_length] = path1[first_city:first_city + subsequence_length]
 
-        counter1 = first_city + subsequence_length
-        counter2 = first_city + subsequence_length
+        counter = first_city + subsequence_length
         for i in range(subsequence_length, number_of_cities):
-            while path2[counter1 % number_of_cities] in new_path1:
-                counter1 += 1
-            new_path1[(i + first_city) % number_of_cities] = path2[counter1 % number_of_cities]
-            while path1[counter2 % number_of_cities] in new_path2:
-                counter2 += 1
-            new_path2[(i + first_city) % number_of_cities] = path1[counter2 % number_of_cities]
-        return new_path1, new_path2
+            while path2[counter % number_of_cities] in new_path:
+                counter += 1
+            new_path[(i + first_city) % number_of_cities] = path2[counter % number_of_cities]
+        return new_path
 
     def cycle_crossover(self, path1, path2, number_of_cities=None):
         if number_of_cities is None:
             number_of_cities = self.number_of_cities
-        new_path1 = np.zeros(number_of_cities)
-        new_path2 = np.zeros(number_of_cities)
+        new_path = np.zeros(number_of_cities)
 
         city = path1[0]
         index = 0
-        while city not in new_path1:
-            new_path1[index] = city
+        while city not in new_path:
+            new_path[index] = city
             index = np.where(path1 == path2[index])[0][0]
             city = path1[index]
         counter = 0
         for i in range(number_of_cities):
-            if new_path1[i] == 0:
-                while path2[counter] in new_path1:
+            if new_path[i] == 0:
+                while path2[counter] in new_path:
                     counter += 1
-                new_path1[i] = path2[counter]
-
-        city = path2[0]
-        index = 0
-        while city not in new_path2:
-            new_path2[index] = city
-            index = np.where(path2 == path1[index])[0][0]
-            city = path1[index]
-        counter = 0
-        for i in range(number_of_cities):
-            if new_path2[i] == 0:
-                while path1[counter] in new_path2:
-                    counter += 1
-                new_path2[i] = path1[counter]
-
-        return new_path1, new_path2
+                new_path[i] = path2[counter]
+        return new_path
 
     def roulette_wheel_selection(self, generation, fitness, n):
         probabilities = fitness / np.sum(fitness)
@@ -237,15 +210,13 @@ class GeneticTrainer:
         cities = np.array([i + 1 for i in range(self.number_of_cities)])
         generation = [np.random.permutation(cities) for _ in range(self.population_size)]
         generation_counter = 1
-        history = np.zeros(self.number_of_generations + 1)
-        fitness = self.generation_fitness(generation)
-        best_path = generation[np.argmax(fitness)]
-        history[0] = self.evaluate_path(best_path)
+        history = []
         # --------------------------------------------------------------------------------------------------------------
         while True:
             # ------------------------EVALUATE--------------------------------------------------------------------------
-            fitness = self.generation_fitness(generation)
-            history[generation_counter - 1] = self.evaluate_path(generation[np.argmax(fitness)])
+            fitness, lengths = self.generation_fitness(generation)
+            best_path = generation[np.argmax(fitness)]
+            history.append([best_path, np.min(lengths), np.mean(lengths)])
             # ----------------------------------------------------------------------------------------------------------
             # ---------------------------TERMINATION CONDITION----------------------------------------------------------
             if generation_counter > self.number_of_generations:
@@ -262,7 +233,7 @@ class GeneticTrainer:
                 selection = self.truncation_selection(generation, fitness, n)
             else:
                 selection = self.roulette_wheel_selection(generation, fitness, n)
-            parents = self.get_n_parent_pairs(selection, (self.population_size - len(selection)) // 2,
+            parents = self.get_n_parent_pairs(selection, (self.population_size - len(selection)),
                                               with_replacement=False)
 
             # ---------------------------------CROSSOVER----------------------------------------------------------------
@@ -274,20 +245,19 @@ class GeneticTrainer:
                 children = np.array([self.partially_mapped_crossover(path1, path2) for path1, path2 in parents],
                                     dtype=int)
             # ----------------------------------------------------------------------------------------------------------
-            children = [item for sublist in children for item in sublist]
             generation = np.concatenate((selection, children), axis=0)
 
             # -----------------------------MUTATE-----------------------------------------------------------------------
             generation = [self.mutate_swap(path) for path in generation]
             # ----------------------------------------------------------------------------------------------------------
             generation_counter += 1
-        best_path = generation[np.argmax(fitness)]
-        return best_path, history
+        return np.array(history, dtype=object)
 
-    def display_cities(self, path=None):
+    def display_cities(self, path=None, ax=None):
         x = [self.coordinates[i][0] for i in range(len(self.coordinates))]
         y = [self.coordinates[i][1] for i in range(len(self.coordinates))]
-        fig, ax = plt.subplots()
+        if ax is None:
+            fig, ax = plt.subplots()
         ax.scatter(x, y)
         for i in range(len(x)):
             ax.annotate(self.city_names[i], (x[i] + 2, y[i] + 2))
@@ -295,13 +265,14 @@ class GeneticTrainer:
             current_city = 0
             path = path.astype(int)
             for city in path:
-                plt.plot([self.coordinates[current_city][0], self.coordinates[int(city)][0]],
+                ax.plot([self.coordinates[current_city][0], self.coordinates[int(city)][0]],
                          [self.coordinates[current_city][1], self.coordinates[int(city)][1]])
                 current_city = city
 
-            plt.plot([self.coordinates[current_city][0], self.coordinates[0][0]],
+            ax.plot([self.coordinates[current_city][0], self.coordinates[0][0]],
                      [self.coordinates[current_city][1], self.coordinates[0][1]])
-        plt.show()
+        if ax is None:
+            plt.show()
 
     def decode_cities(self, path):
         return [chr(int(city) + 64) for city in path]
@@ -311,13 +282,12 @@ def test():
     g = GeneticTrainer()
     test_p1 = np.array([ord(c) - 64 for c in "JBFCADHGIE"])
     test_p2 = np.array([ord(c) - 64 for c in "FAGDHCEBJI"])
-    pmc1, pmc2 = g.partially_mapped_crossover(test_p1, test_p2, number_of_cities=10, distribution="test", first_city=2)
-    print(g.decode_cities(pmc1))
-    order_crossover1, order_crossover2 = g.order_crossover(test_p1, test_p2, number_of_cities=10, distribution="test",
-                                                           first_city=1)
-    print(g.decode_cities(order_crossover1))
-    cycle_crossover1, cycle_crossover2 = g.cycle_crossover(test_p1, test_p2, number_of_cities=10)
-    print(g.decode_cities(cycle_crossover1))
+    pmc = g.partially_mapped_crossover(test_p1, test_p2, number_of_cities=10, distribution="test", first_city=2)
+    print(g.decode_cities(pmc))
+    order_crossover = g.order_crossover(test_p1, test_p2, number_of_cities=10, distribution="test", first_city=1)
+    print(g.decode_cities(order_crossover))
+    cycle_crossover = g.cycle_crossover(test_p1, test_p2, number_of_cities=10)
+    print(g.decode_cities(cycle_crossover))
 
 
 test()
@@ -325,11 +295,17 @@ coordinates = [[150, 100], [240, 80], [100, 160], [25, 165], [200, 20], [150, 30
                [85, 40], [125, 5], [190, 120], [0, 55], [250, 90], [175, 70], [100, 120], [175, 80], [20, 10],
                [150, 160], [230, 25], [125, 75]]
 g = GeneticTrainer(coordinates=coordinates, population_size=100, number_of_generations=1000, mutation_rate=0.15, selection_rate=1/4)
-# best_path, history = g.train(crossover_method="pmc", selection_method="truncation")
-# print(best_path)
-# plt.plot(history)
-# plt.show()
-best_path, history = g.train(crossover_method="cycle", selection_method="rws")
-plt.plot(history)
-plt.show()
-g.display_cities(best_path)
+crossover_methods = ["pmc", "order", "cycle"]
+selection_methods = ["rws", "sus", "tournament", "truncation"]
+history = [[[] for s in crossover_methods] for c in selection_methods]
+for i, c in enumerate(crossover_methods):
+    for j, s in enumerate(selection_methods):
+        history[j][i] = g.train(crossover_method=c, selection_method=s)
+fig, axs = plt.subplots(len(crossover_methods), len(selection_methods) * 2)
+for i, c in enumerate(crossover_methods):
+    for j, s in enumerate(selection_methods):
+        axs[i, j * 2].set_title(c + " " + s)
+        axs[i, j * 2].plot(history[j][i][:, 1])
+        g.display_cities(path=history[j][i][-1, 0], ax=axs[i, j * 2 + 1])
+fig.subplots_adjust(right=12, bottom=0, top=4)
+fig.savefig("comparison.jpg", dpi=100, bbox_inches=matplotlib.transforms.Bbox([[0, -2.4], [6.4*12 + 1, 4.8 * 5 - 2.4]]))
