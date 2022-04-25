@@ -9,7 +9,14 @@ import matplotlib.pyplot as plt
 
 class GeneticTrainer:
 
-    def __init__(self, coordinates=None, population_size=100, number_of_generations=10, mutation_rate=0.1):
+    def __init__(self, coordinates=None, population_size=100, number_of_generations=10, selection_rate=0.2,
+                 mutation_rate=0.1):
+
+        self.selection_rate = selection_rate
+        self.population_size = population_size
+        self.number_of_generations = number_of_generations
+        self.mutation_rate = mutation_rate
+
         if coordinates is not None:
             self.number_of_cities = len(coordinates) - 1
             self.coordinates = coordinates
@@ -18,12 +25,9 @@ class GeneticTrainer:
             self.coordinates = [[100, 150]] + [[int(random.random() * 275), int(random.random() * 200)] for _ in
                                                range(self.number_of_cities)]
         self.distances = [
-            [int(np.linalg.norm([self.coordinates[i], self.coordinates[j]])) for i in range(len(self.coordinates))]
+            [int(np.sqrt((self.coordinates[i][0] - self.coordinates[j][0]) ** 2 + (self.coordinates[i][1] - self.coordinates[j][1]) ** 2)) for i in range(len(self.coordinates))]
             for j in range(len(self.coordinates))]
         self.city_names = ["X"] + [chr(65 + i) for i in range(self.number_of_cities)]
-        self.population_size = population_size
-        self.number_of_generations = number_of_generations
-        self.mutation_rate = mutation_rate
 
     def evaluate_path(self, path):
         path_length = 0
@@ -36,7 +40,7 @@ class GeneticTrainer:
 
     def generation_fitness(self, generation, p=0, epsilon=1):
         evaluation = np.array([self.evaluate_path(path) for path in generation])
-        return (max(evaluation) - evaluation)/(max(evaluation) - min(evaluation) + 1)
+        return 1 / (evaluation - min(evaluation) + 1)
 
     def partially_mapped_crossover(self, path1, path2, number_of_cities=None, distribution="uniform", first_city=None):
         if number_of_cities is None:
@@ -142,12 +146,12 @@ class GeneticTrainer:
 
         return new_path1, new_path2
 
-    def roulette_wheel_selection(self, generation, weights, n):
-        probabilities = weights / np.sum(weights)
+    def roulette_wheel_selection(self, generation, fitness, n):
+        probabilities = fitness / np.sum(fitness)
         new_generation = np.random.choice([i for i in range(len(generation))], size=n, replace=False, p=probabilities)
         return [generation[new_generation[i]] for i in range(n)]
 
-    def stochastic_universal_sampling(self, generation, n, fitness):
+    def stochastic_universal_sampling(self, generation, fitness, n):
         p = sum(fitness) / n
         indices = list(range(len(fitness)))
         indices.sort(key=fitness.__getitem__, reverse=True)
@@ -168,22 +172,21 @@ class GeneticTrainer:
             counter += 1
         return keep
 
-    def tournament_selection(self, generation, fitness, tournament_size, p, n):
+    def tournament_selection(self, generation, fitness, n, tournament_size, p):
         indices = list(range(len(fitness)))
         indices.sort(key=fitness.__getitem__, reverse=True)
         sorted_generation = list(map(generation.__getitem__, indices))
         probabilities = np.array([p * (1 - p) ** i for i in range(tournament_size)])
         probabilities = probabilities / sum(probabilities)
         sorted_truncated_generation = sorted_generation[:tournament_size]
-        return random.choices(sorted_truncated_generation, weights=probabilities, k=n)
+        new_generation = np.random.choice([i for i in range(tournament_size)], size=n, replace=False, p=probabilities)
+        return [sorted_truncated_generation[i] for i in new_generation]
 
-    def truncation_selection(self, generation, fitness, p):
-        n = len(fitness)
-        indices = list(range(n))
+    def truncation_selection(self, generation, fitness, n):
+        indices = list(range(len(fitness)))
         indices.sort(key=fitness.__getitem__, reverse=True)
         sorted_generation = list(map(generation.__getitem__, indices))
-        truncated_generation = sorted_generation[:int(n * p)]
-        truncated_generation = np.repeat(truncated_generation, int(1 / p), axis=0)
+        truncated_generation = sorted_generation[:n]
         return truncated_generation
 
     def mutate_singular(self, path):
@@ -240,24 +243,27 @@ class GeneticTrainer:
         history[0] = self.evaluate_path(best_path)
         # --------------------------------------------------------------------------------------------------------------
         while True:
-            if generation_counter > self.number_of_generations:
-                break
             # ------------------------EVALUATE--------------------------------------------------------------------------
             fitness = self.generation_fitness(generation)
+            history[generation_counter - 1] = self.evaluate_path(generation[np.argmax(fitness)])
             # ----------------------------------------------------------------------------------------------------------
-            # ---------------------------TODO TERMINATION CONDITION-----------------------------------------------------
+            # ---------------------------TERMINATION CONDITION----------------------------------------------------------
+            if generation_counter > self.number_of_generations:
+                break
             # ----------------------------------------------------------------------------------------------------------
             # --------------------------------SELECT--------------------------------------------------------------------
+            n = int(self.selection_rate * self.population_size)
             if selection_method == "sus":
-                selection = self.stochastic_universal_sampling(generation, int(0.2 * self.population_size), fitness)
+                selection = self.stochastic_universal_sampling(generation, fitness, n)
             elif selection_method == "tournament":
-                selection = self.tournament_selection(generation, fitness, int(0.5 * self.population_size), p=4 / 9,
-                                                      n=int(0.2 * self.population_size))
+                tournament_size = int(2.5 * self.selection_rate * self.population_size)
+                selection = self.tournament_selection(generation, fitness, n, tournament_size=tournament_size, p=4/9)
             elif selection_method == "truncation":
-                selection = self.truncation_selection(generation, fitness, p=0.2)
+                selection = self.truncation_selection(generation, fitness, n)
             else:
-                selection = self.roulette_wheel_selection(generation, fitness, int(0.2 * self.population_size))
-            parents = self.get_n_parent_pairs(selection, (self.population_size - len(selection)) // 2)
+                selection = self.roulette_wheel_selection(generation, fitness, n)
+            parents = self.get_n_parent_pairs(selection, (self.population_size - len(selection)) // 2,
+                                              with_replacement=False)
 
             # ---------------------------------CROSSOVER----------------------------------------------------------------
             if crossover_method == "order":
@@ -274,10 +280,8 @@ class GeneticTrainer:
             # -----------------------------MUTATE-----------------------------------------------------------------------
             generation = [self.mutate_swap(path) for path in generation]
             # ----------------------------------------------------------------------------------------------------------
-            fitness = self.generation_fitness(generation)
-            best_path = generation[np.argmax(fitness)]
-            history[generation_counter] = self.evaluate_path(best_path)
             generation_counter += 1
+        best_path = generation[np.argmax(fitness)]
         return best_path, history
 
     def display_cities(self, path=None):
@@ -320,12 +324,12 @@ test()
 coordinates = [[150, 100], [240, 80], [100, 160], [25, 165], [200, 20], [150, 30], [220, 180], [270, 15], [225, 115],
                [85, 40], [125, 5], [190, 120], [0, 55], [250, 90], [175, 70], [100, 120], [175, 80], [20, 10],
                [150, 160], [230, 25], [125, 75]]
-g = GeneticTrainer(coordinates=coordinates, population_size=100, number_of_generations=1000, mutation_rate=0.01)
+g = GeneticTrainer(coordinates=coordinates, population_size=100, number_of_generations=1000, mutation_rate=0.15, selection_rate=1/4)
 # best_path, history = g.train(crossover_method="pmc", selection_method="truncation")
 # print(best_path)
 # plt.plot(history)
 # plt.show()
-best_path, history = g.train(crossover_method="pmc", selection_method="tournament")
+best_path, history = g.train(crossover_method="cycle", selection_method="rws")
 plt.plot(history)
 plt.show()
 g.display_cities(best_path)
